@@ -1,9 +1,17 @@
 module Arrow where
 
 import Control.Applicative (liftA2)
-
+import Control.Monad (liftM)
+import Control.Monad.Fix
 import Kleisli
 import SF
+
+
+infixr 3 ***
+infixr 3 &&&
+infixr 2 +++
+infixr 2 |||
+infixr 1 >>>
 
 class Arrow arr where
     arr   :: (a -> b) -> arr a b
@@ -40,14 +48,42 @@ class Arrow arr => ArrowChoice arr where
 
 mapA :: ArrowChoice arr => arr a b -> arr [a] [b]
 mapA f = arr listcase >>>
-         (arr (const []) ||| ((f *** mapA f) >>> arr (uncurry  (:))))
-    where listcase :: [a] -> Either () (a, [a])
-          listcase []     = Left ()
+         arr (const []) ||| (f *** mapA f >>> arr (uncurry (:)))
+    where listcase []     = Left ()
           listcase (x:xs) = Right (x, xs)
 
-ifte :: Arrow arr => arr a Bool -> arr a b -> arr a b -> arr a b
-ifte p f g = undefined
+delaysA = arr listcase >>>
+           arr (const []) |||
+           (arr id *** (delaysA >>> delay []) >>>
+            arr (uncurry (:)))
+    where listcase []     = Left ()
+          listcase (x:xs) = Right (x, xs)
 
+class Arrow arr => ArrowLoop arr where
+    loop :: arr (a,c) (b,c) -> arr a b
+
+class Arrow arr => ArrowApply arr where
+    app :: arr (arr a b, a) b
+
+newtype ArrowMonad arr a = ArrowMonad (arr () a)
+
+instance Arrow a => Functor (ArrowMonad a) where
+    fmap f (ArrowMonad m) = ArrowMonad (m >>> arr f)
+
+instance Arrow a => Applicative (ArrowMonad a) where
+    pure x = ArrowMonad (arr (const x))
+    ArrowMonad x <*> ArrowMonad y = ArrowMonad (x &&& y >>> arr (\ (f, a) -> f a))
+
+instance ArrowApply a => Monad (ArrowMonad a) where
+    ArrowMonad m >>= f = ArrowMonad (m >>>
+                                     arr (\ x -> let ArrowMonad h = f x in (h, ()))
+                                     >>> app)
+
+ifte :: ArrowChoice arr => arr a Bool -> arr a b -> arr a b -> arr a b
+ifte p f g = p &&& arr id >>> arr h >>> f ||| g
+    where h :: (Bool, a) -> Either a a
+          h (True, a) = Left a
+          h (False, a) = Right a
 
 instance Arrow (->) where
     arr   = id
@@ -60,6 +96,13 @@ instance ArrowChoice (->) where
     (|||) = either
     f +++ g = either (Left . f) (Right . g)
     left f = either (Left .f) Right
+
+instance ArrowLoop (->) where
+    loop f a = b
+        where (b , c) = f (a, c)
+
+instance ArrowApply (->) where
+    app (f, x) = f x
 
 instance Monad m => Arrow (Kleisli m) where
     arr f = Kleisli (return . f)
@@ -79,6 +122,13 @@ instance Monad m => ArrowChoice (Kleisli m) where
     Kleisli f +++ Kleisli g = Kleisli $ \ x -> either (fmap Left . f) (fmap Right .g) x
     left (Kleisli f) = Kleisli $ \ x -> either (fmap Left . f) (fmap Right . return) x
 
+instance MonadFix m => ArrowLoop (Kleisli m) where
+        loop (Kleisli f) = Kleisli (liftM fst . mfix . f')
+          where f' x y = f (x, snd y)
+
+instance Monad m => ArrowApply (Kleisli m) where
+    app = Kleisli $ (\(Kleisli mb, a) -> mb a)
+
 instance Arrow SF where
     arr f = SF (map f)
     SF f >>> SF g = SF (f >>> g)
@@ -88,10 +138,30 @@ instance Arrow SF where
     first (SF f)  = SF (unzip >>> first f >>> uncurry zip)
 
 instance ArrowChoice SF where
-    SF f ||| SF g = SF (map (either (\ l -> f [l]) (\ r -> g [r])) >>> concat)
-    SF f +++ SF g = SF (map (either (\ l -> map Left $ f [l]) (\ r -> map Right $ g [r])) >>> concat)
+    --SF f ||| SF g = SF (map (either (\ l -> f [l]) (\ r -> g [r])) >>> concat)
+    --SF f +++ SF g = SF (map (either (\ l -> map Left $ f [l]) (\ r -> map Right $ g [r])) >>> concat)
     --left (SF f) = SF (map (either (\ l -> map Left $ f [l]) (\ r -> map Right [r])) >>> concat)
     left (SF f) = SF (\ xs -> combine xs (f [y | Left y <- xs]))
         where combine (Left  y:xs) (z:zs) = Left z : combine xs zs
               combine (Right y:xs) zs     = Right y : combine xs zs
               combine []           _      = []
+
+
+--------------exercises---------------
+--- filter _ [] =
+--- filter pred (x : xs)
+--    | pref x = x : filter pred xs
+--    | other  = filter pred xs
+
+-- filterA :: ArrowChoice arr => arr a Bool -> arr [a] [a]
+-- filterA f = arr listcase >>>
+--             arr (const []) ||| (ifte f undefined (filterA f))
+--     where listcase [] = Left ()
+--           listcase (x: xs) = Right (x, xs)
+
+--           h :: (Bool, a) -> Either () a
+--           h (False, a) = Left ()
+--           h (True, a) = Right a
+
+--           arrB :: arr a Bool -> arr a [a]
+--           arrB f = f &&& arr id >>> arr h
