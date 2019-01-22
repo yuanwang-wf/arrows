@@ -98,6 +98,38 @@ How to implement `filterA`
 
 we need `arr (a, [a]) (Either () a, [Either () a])`
 
+```haskell
+filterA :: ArrowChoice arr => arr a Bool -> arr [a] [a]
+filterA f = arr listcase >>>
+            arr (const []) ||| ((f &&& arr id >>> arr h) *** filterA f >>> arr (uncurry (++)))
+    where listcase [] = Left ()
+          listcase (x: xs) = Right (x, xs)
+
+          h :: (Bool , a) -> [a]
+          h (False, _) = []
+          h (True, a) = [a]
+```
+
+
+`data SP a b = Put b (SP a b) | Get (a -> SP a b)`
+
+`first` operator builds a process that feeds the first components of its inputs through its argument process, while the second component bypass the argument process and recombined with its outputs. But what if the argument process does not produce one output per input ? Our solution is to buffer the unconsumed input until corresponding output are produced.
+
+
+
+
+```haskell
+instance Arrow SP where
+    arr f = Get (\ a -> Put (f a) (arr f))
+    sp1 >>> Put c sp2 = Put c (sp1 >>> sp2)
+    Put b sp1 >>> Get f = sp1 >>> f b
+    Get f >>> Get g = Get (\x -> f x >>> Get g)
+
+    first = bypass []
+        where bypass ds (Get f) = Get (\ (b, d -> bypass (ds ++ [d]) (f b))
+              bypass (d: ds) (Put c sp) = Put (c, d) (bypass ds sp)
+              bypass [] (Put c sp) = Get (\ (b, d) -> Put (c, d) (bypass [] sp))
+```
 
 Arrow Transformer ?
 
