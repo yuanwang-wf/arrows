@@ -1,6 +1,5 @@
 module Arrow where
 
-import Control.Applicative (liftA2)
 import Control.Monad (liftM)
 import Control.Monad.Fix
 import Kleisli
@@ -51,6 +50,24 @@ mapA f = arr listcase >>>
          arr (const []) ||| (f *** mapA f >>> arr (uncurry (:)))
     where listcase []     = Left ()
           listcase (x:xs) = Right (x, xs)
+
+--------------exercises---------------
+--- filter _ [] =
+--- filter pred (x : xs)
+--    | pref x = x : filter pred xs
+--    | other  = filter pred xs
+
+filterA :: ArrowChoice arr => arr a Bool -> arr [a] [a]
+filterA f = arr listcase >>>
+            arr (const []) ||| ((f &&& arr id >>> arr h) *** filterA f >>> arr (uncurry (++)))
+    where listcase [] = Left ()
+          listcase (x: xs) = Right (x, xs)
+
+          h :: (Bool , a) -> [a]
+          h (False, _) = []
+          h (True, a) = [a]
+
+
 
 delaysA = arr listcase >>>
            arr (const []) |||
@@ -145,23 +162,3 @@ instance ArrowChoice SF where
         where combine (Left  y:xs) (z:zs) = Left z : combine xs zs
               combine (Right y:xs) zs     = Right y : combine xs zs
               combine []           _      = []
-
-
---------------exercises---------------
---- filter _ [] =
---- filter pred (x : xs)
---    | pref x = x : filter pred xs
---    | other  = filter pred xs
-
--- filterA :: ArrowChoice arr => arr a Bool -> arr [a] [a]
--- filterA f = arr listcase >>>
---             arr (const []) ||| (ifte f undefined (filterA f))
---     where listcase [] = Left ()
---           listcase (x: xs) = Right (x, xs)
-
---           h :: (Bool, a) -> Either () a
---           h (False, a) = Left ()
---           h (True, a) = Right a
-
---           arrB :: arr a Bool -> arr a [a]
---           arrB f = f &&& arr id >>> arr h
