@@ -117,7 +117,6 @@ filterA f = arr listcase >>>
 
 
 
-
 ```haskell
 instance Arrow SP where
     arr f = Get (\ a -> Put (f a) (arr f))
@@ -130,6 +129,8 @@ instance Arrow SP where
               bypass (d: ds) (Put c sp) = Put (c, d) (bypass ds sp)
               bypass [] (Put c sp) = Get (\ (b, d) -> Put (c, d) (bypass [] sp))
 ```
+
+### Pointed Arrow Programming
 
 Arrow Transformer ?
 

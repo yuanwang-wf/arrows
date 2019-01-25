@@ -115,8 +115,7 @@ instance ArrowChoice (->) where
     left f = either (Left .f) Right
 
 instance ArrowLoop (->) where
-    loop f a = b
-        where (b , c) = f (a, c)
+    loop f a = let (c, b) = f (a, b) in c
 
 instance ArrowApply (->) where
     app (f, x) = f x
@@ -162,3 +161,7 @@ instance ArrowChoice SF where
         where combine (Left  y:xs) (z:zs) = Left z : combine xs zs
               combine (Right y:xs) zs     = Right y : combine xs zs
               combine []           _      = []
+
+instance ArrowLoop SF where
+    loop (SF f) = SF $ \ as ->
+        let (bs, cs) = unzip (f (zip as cs)) in bs
